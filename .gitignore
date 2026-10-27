@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.vercel
+# Temp & Log files
+*.log
+node_out.txt
+ts_errors.txt
+ts_out.txt
+firebase-admin-config.json
+branch_structure.json
+.gitignore

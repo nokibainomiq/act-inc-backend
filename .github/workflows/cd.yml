@@ -1,0 +1,41 @@
+name: CD Workflow (Main Branch -> AWS EC2)
+
+# Automatic trigger disabled
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [ "main" ]
+
+jobs:
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            source ~/.bashrc 2>/dev/null || true
+            source ~/.profile 2>/dev/null || true
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            export PATH=$PATH:/usr/local/bin:/usr/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | tail -n 1)/bin:$HOME/.yarn/bin:$HOME/.npm-global/bin
+
+            cd ~/actinc/backend || cd /var/www/actinc
+            git fetch origin main
+            git reset --hard origin/main
+
+            YARN_CMD=$(command -v yarn || command -v npm)
+            PM2_CMD=$(command -v pm2 || find $HOME/.nvm /usr /home -name pm2 2>/dev/null | head -n 1 || echo "pm2")
+
+            $YARN_CMD install
+            $YARN_CMD run build || $YARN_CMD build
+            $PM2_CMD restart actinc-backend || $PM2_CMD restart all
