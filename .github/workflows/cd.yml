@@ -1,10 +1,15 @@
 name: CD Workflow (Main Branch -> AWS EC2)
 
-# Automatic trigger disabled
+# Deploys on every push to main, and on demand from the Actions tab.
 on:
+  push:
+    branches: ["main"]
   workflow_dispatch:
-  # push:
-  #   branches: [ "main" ]
+
+# One deploy at a time; a newer push waits for the running one.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -12,16 +17,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          # Optional repository variables (Settings > Secrets and variables > Actions > Variables).
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          PM2_APP: ${{ vars.PM2_APP }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
+          command_timeout: 20m
+          envs: DEPLOY_PATH,PM2_APP
           script: |
             source ~/.bashrc 2>/dev/null || true
             source ~/.profile 2>/dev/null || true
@@ -29,13 +37,27 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             export PATH=$PATH:/usr/local/bin:/usr/bin:$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | tail -n 1)/bin:$HOME/.yarn/bin:$HOME/.npm-global/bin
 
-            cd ~/actinc/backend || cd /var/www/actinc
+            # Stop at the first failure, so a broken build never gets restarted into.
+            set -eo pipefail
+
+            APP_DIR="${DEPLOY_PATH:-$HOME/actinc/backend}"
+            APP_NAME="${PM2_APP:-actinc-backend}"
+            echo "Deploying $APP_NAME in $APP_DIR"
+            cd "$APP_DIR"
+
             git fetch origin main
             git reset --hard origin/main
+            echo "Now at $(git log --oneline -1)"
 
-            YARN_CMD=$(command -v yarn || command -v npm)
-            PM2_CMD=$(command -v pm2 || find $HOME/.nvm /usr /home -name pm2 2>/dev/null | head -n 1 || echo "pm2")
+            if command -v yarn >/dev/null; then
+              yarn install
+              yarn build
+            else
+              npm install
+              npm run build
+            fi
 
-            $YARN_CMD install
-            $YARN_CMD run build || $YARN_CMD build
-            $PM2_CMD restart actinc-backend || $PM2_CMD restart all
+            # Restart only this app; never fall back to restarting everything.
+            pm2 restart "$APP_NAME" --update-env
+            pm2 save
+            echo "Deployed $APP_NAME"
