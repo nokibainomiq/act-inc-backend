@@ -239,15 +239,19 @@ interface CompanyDetailsData {
     organizationGrade: number;
   };
   barChart: {
-    averageIncreasePercentage: number;
-    assessmentCount: number;
     chartData: {
       name: string;
-      baseline: number;
-      followUp: number;
       score: number;
+      completion: number;
     }[];
   };
+  leaderboard: {
+    userId: string;
+    name: string;
+    teamName: string;
+    completedModules: number;
+    averageScore: number;
+  }[];
   teamPerformance: {
     teamId: string;
     teamName: string;
@@ -275,7 +279,7 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
 
   // 2. Get all active users for this company
   const users = await User.find({ companyId, isDeleted: false, status: 'active' })
-    .select('_id teamId')
+    .select('_id teamId firstName lastName fullName')
     .lean();
   const userIds = users.map((u) => u._id);
   const activeParticipants = userIds.length;
@@ -310,40 +314,43 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
   const avgScore = scoredProgress.length > 0
     ? scoredProgress.reduce((sum, p) => sum + (p.score || 0), 0) / scoredProgress.length
     : 0;
-  const organizationGrade = Math.round(avgScore * 10) / 10; // 0-10 scale
+  const organizationGrade = Math.round(avgScore) / 10; // scores are 0-100, the grade is 0-10
 
-  // Build Bar Chart Data using Module titles
-  const barChartItems = modules.map((mod) => {
+  // Average score and completion per module, from real progress
+  const chartData = modules.map((mod) => {
     const modProgress = userProgress.filter((p) => p.moduleId.equals(mod._id));
     const scored = modProgress.filter((p) => p.score !== undefined && p.score !== null);
-    const currentScore =
+    const score =
       scored.length > 0
         ? Math.round(scored.reduce((sum, p) => sum + (p.score || 0), 0) / scored.length)
         : 0;
-
-    // Estimate baseline as initial 75% of current score
-    const baseline = currentScore > 0 ? Math.max(30, Math.round(currentScore * 0.75)) : 0;
-
-    return {
-      name: mod.title,
-      baseline,
-      followUp: currentScore || 0,
-      score: currentScore,
-    };
+    const completed = modProgress.filter((p) => p.status === 'completed').length;
+    const completion = userIds.length > 0 ? Math.round((completed / userIds.length) * 100) : 0;
+    return { name: mod.title, score, completion };
   });
 
-  const totalIncreaseSum = barChartItems.reduce(
-    (sum, item) => sum + (item.followUp - item.baseline),
-    0,
-  );
-  const averageIncreasePercentage =
-    barChartItems.length > 0 ? Math.max(0, Math.round(totalIncreaseSum / barChartItems.length)) : 0;
+  const barChart = { chartData };
 
-  const barChart = {
-    averageIncreasePercentage,
-    assessmentCount: barChartItems.length,
-    chartData: barChartItems,
-  };
+  // Leaderboard: learners ranked by finished modules, then by their average score
+  const leaderboard = users
+    .map((u) => {
+      const own = userProgress.filter((p) => p.userId.equals(u._id));
+      const completedOwn = own.filter((p) => p.status === 'completed');
+      const averageScore =
+        completedOwn.length > 0
+          ? Math.round(completedOwn.reduce((sum, p) => sum + (p.score || 0), 0) / completedOwn.length)
+          : 0;
+      return {
+        userId: u._id.toString(),
+        name: u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' '),
+        teamName: (u.teamId && teamMap.get(u.teamId.toString())) || 'No team',
+        completedModules: completedOwn.length,
+        averageScore,
+      };
+    })
+    .filter((entry) => entry.completedModules > 0)
+    .sort((a, b) => b.completedModules - a.completedModules || b.averageScore - a.averageScore)
+    .slice(0, 10);
 
   // 9. Team performance
   const teamPerformance = await Promise.all(
@@ -404,6 +411,7 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
       organizationGrade,
     },
     barChart,
+    leaderboard,
     teamPerformance,
     moduleCompliance,
   };

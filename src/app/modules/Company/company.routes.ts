@@ -1,6 +1,7 @@
 import express from 'express';
 import validateRequest from '../../middleware/validateRequest';
 import auth from '../../middleware/auth';
+import ownCompany from '../../middleware/ownCompany';
 import { USER_ROLE } from '../Auth/auth.constant';
 import { CompanyControllers } from './company.controller';
 import { CompanyValidation } from './company.validation';
@@ -18,7 +19,7 @@ router.post(
 
 router.get(
   '/',
-  auth(USER_ROLE.superAdmin, USER_ROLE.admin, USER_ROLE.company),
+  auth(USER_ROLE.superAdmin, USER_ROLE.admin),
   CompanyControllers.getAllCompanies,
 );
 
@@ -42,6 +43,7 @@ router.post(
 router.get(
   '/:id',
   auth(USER_ROLE.superAdmin, USER_ROLE.admin, USER_ROLE.company),
+  ownCompany(),
   CompanyControllers.getSingleCompany,
 );
 
@@ -56,6 +58,7 @@ router.patch(
 router.patch(
   '/:id/branding',
   auth(USER_ROLE.superAdmin, USER_ROLE.admin, USER_ROLE.company),
+  ownCompany(),
   upload.fields([
     { name: 'logo', maxCount: 1 },
     { name: 'video', maxCount: 1 },
@@ -81,6 +84,7 @@ router.delete(
 router.get(
   '/:id/details',
   auth(USER_ROLE.superAdmin, USER_ROLE.admin, USER_ROLE.company),
+  ownCompany(),
   CompanyControllers.getCompanyDetails,
 );
 
@@ -88,6 +92,7 @@ router.get(
 router.get(
   '/:id/download-report',
   auth(USER_ROLE.superAdmin, USER_ROLE.admin, USER_ROLE.company),
+  ownCompany(),
   CompanyControllers.downloadCompanyReportPDF,
 );
 

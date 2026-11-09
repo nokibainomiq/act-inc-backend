@@ -2,6 +2,10 @@ import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync';
 import sendResponse from '../../utils/sendResponse';
 import { UserProgressServices } from './userProgress.services';
+import AppError from '../../errors/AppError';
+import { Team } from '../Team/team.model';
+
+const isAdmin = (role: string) => role === 'admin' || role === 'superAdmin';
 
 // ── Get My Learning Path (User Dashboard & Assigned Modules) ──
 const getMyLearningPath = catchAsync(async (req, res) => {
@@ -74,6 +78,16 @@ const completeModule = catchAsync(async (req, res) => {
 // ── Get Team Performance Stats ──
 const getTeamPerformance = catchAsync(async (req, res) => {
   const teamId = (req.params.teamId as string) || req.user.teamId;
+  const { role, userId } = req.user;
+
+  // Learners see only their own team; a company sees only its own teams.
+  if (teamId && !isAdmin(role)) {
+    const allowed =
+      role === 'company'
+        ? String((await Team.findById(teamId).select('companyId').lean())?.companyId) === userId
+        : teamId === String(req.user.teamId);
+    if (!allowed) throw new AppError(httpStatus.FORBIDDEN, 'You can only view your own team');
+  }
 
   if (!teamId) {
     return sendResponse(res, {
@@ -97,6 +111,10 @@ const getTeamPerformance = catchAsync(async (req, res) => {
 // ── Get Company Performance Stats ──
 const getCompanyPerformance = catchAsync(async (req, res) => {
   const companyId = (req.params.companyId as string) || req.user.companyId;
+
+  if (companyId && !isAdmin(req.user.role) && companyId !== String(req.user.companyId)) {
+    throw new AppError(httpStatus.FORBIDDEN, 'You can only view your own company');
+  }
 
   if (!companyId) {
     return sendResponse(res, {
