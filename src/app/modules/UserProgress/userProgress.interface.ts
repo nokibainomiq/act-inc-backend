@@ -21,6 +21,18 @@ export interface IUserProgress {
     isCorrect?: boolean;
     score?: number;
     answeredAt: Date;
+    // Seconds the learner spent on the question, as reported by the app.
+    timeSpentSeconds?: number;
+    // How much of a video question's video was watched, 0-100.
+    watchedPercent?: number;
+  }[];
+  // Earlier finished runs of this module, kept when a learner starts it again.
+  attempts?: {
+    score?: number | null;
+    correctAnswers: number;
+    scoredAnswers: number;
+    startedAt?: Date;
+    completedAt?: Date;
   }[];
 }
 

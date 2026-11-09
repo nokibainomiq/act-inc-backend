@@ -232,11 +232,17 @@ const feedbackForAnswer = (question: any, isCorrect: boolean): string => {
 
 const submitAnswerInDB = async (
   userId: string | undefined,
-  payload: { moduleId: string; questionId: string; answer: any },
+  payload: {
+    moduleId: string;
+    questionId: string;
+    answer: any;
+    timeSpentSeconds?: number;
+    watchedPercent?: number;
+  },
   guestCompanyId?: string,
   guestTeamId?: string,
 ) => {
-  const { moduleId, questionId, answer } = payload;
+  const { moduleId, questionId, answer, timeSpentSeconds, watchedPercent } = payload;
 
   const module = await Module.findOne({ _id: moduleId, isDeleted: false });
   if (!module) {
@@ -364,6 +370,29 @@ const submitAnswerInDB = async (
     }
     progress.lastAttemptAt = new Date();
 
+    // Answering a finished module starts a new run: keep the finished one's result first.
+    const finishedAt = progress.completedAt?.getTime();
+    if (
+      progress.status === 'completed' &&
+      finishedAt &&
+      !(progress.attempts || []).some((a: any) => a.completedAt?.getTime() === finishedAt)
+    ) {
+      const scored = (progress.answers || []).filter((a: any) => {
+        const q: any = module.questions.find((qItem: any) => qItem.id === a.questionId);
+        return q ? q.isScored !== false : true;
+      });
+      progress.attempts = [
+        ...(progress.attempts || []),
+        {
+          score: progress.score,
+          correctAnswers: scored.filter((a: any) => a.isCorrect).length,
+          scoredAnswers: scored.length,
+          startedAt: progress.startedAt,
+          completedAt: progress.completedAt,
+        },
+      ];
+    }
+
     // Update or push answer
     const existingAnswerIndex = progress.answers.findIndex((a: any) => a.questionId === questionId);
     const answerObj = {
@@ -372,6 +401,8 @@ const submitAnswerInDB = async (
       isCorrect,
       score: qScore,
       answeredAt: new Date(),
+      ...(timeSpentSeconds !== undefined ? { timeSpentSeconds: Math.round(timeSpentSeconds) } : {}),
+      ...(watchedPercent !== undefined ? { watchedPercent: Math.round(watchedPercent) } : {}),
     };
 
     if (existingAnswerIndex > -1) {
@@ -407,8 +438,13 @@ const submitAnswerInDB = async (
     progress.score = avgScore;
 
     if (completedQuestions >= totalQuestions) {
+      // A retake keeps its earlier finish time until the last question is answered again,
+      // so the finished run above is saved only once per retake.
+      const answeredLastQuestion = module.questions[module.questions.length - 1]?.id === questionId;
+      if (progress.status !== 'completed' || answeredLastQuestion) {
+        progress.completedAt = new Date();
+      }
       progress.status = 'completed';
-      progress.completedAt = new Date();
     }
 
     await progress.save();

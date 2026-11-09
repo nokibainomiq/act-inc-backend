@@ -8,6 +8,19 @@ const answerSchema = new Schema(
     isCorrect: { type: Boolean },
     score: { type: Number },
     answeredAt: { type: Date, default: Date.now },
+    timeSpentSeconds: { type: Number, min: 0 },
+    watchedPercent: { type: Number, min: 0, max: 100 },
+  },
+  { _id: false },
+);
+
+const attemptSchema = new Schema(
+  {
+    score: { type: Number },
+    correctAnswers: { type: Number, default: 0 },
+    scoredAnswers: { type: Number, default: 0 },
+    startedAt: { type: Date },
+    completedAt: { type: Date },
   },
   { _id: false },
 );
@@ -31,6 +44,7 @@ const userProgressSchema = new Schema<IUserProgress, UserProgressModel>(
     completedAt: { type: Date },
     lastAttemptAt: { type: Date },
     answers: { type: [answerSchema], default: [] },
+    attempts: { type: [attemptSchema], default: [] },
   },
   { timestamps: true },
 );
