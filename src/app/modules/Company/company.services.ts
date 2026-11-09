@@ -10,6 +10,8 @@ import { TUser } from '../User/user.interface';
 import { getEmailTemplate } from '../../utils/emailTemplate';
 import sendEmail from '../../utils/sendEmail';
 import PDFDocument from 'pdfkit';
+import { gradedScore } from '../../utils/gradedScore';
+import { learnerName } from '../../utils/learnerName';
 
 /** Only company-role users should be treated as companies */
 const COMPANY_FILTER = { role: 'company' as const, isDeleted: false };
@@ -295,25 +297,39 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
     isDeleted: false,
     status: 'published',
   })
-    .select('_id title teamId companyId')
+    .select('_id title teamId companyId questions')
     .lean();
   const moduleIds = modules.map((m) => m._id);
+  const questionsByModule = new Map(modules.map((m) => [m._id.toString(), m.questions]));
 
-  // 5. Get UserProgress for all users in this company
-  const userProgress = await UserProgress.find({ companyId, moduleId: { $in: moduleIds } })
-    .select('userId moduleId status progressPercentage score completedQuestions totalQuestions')
-    .lean();
+  // 5. Get UserProgress for all users in this company. Scores only count questions
+  // that have a right answer, so information and open questions don't push them to 100%.
+  const userProgress = (
+    await UserProgress.find({ companyId, moduleId: { $in: moduleIds } })
+      .select('userId moduleId status progressPercentage score completedQuestions totalQuestions answers')
+      .lean()
+  ).map((p) => ({ ...p, score: gradedScore(p.answers, questionsByModule.get(p.moduleId.toString())) }));
 
   // 6. Calculate completion rate
   const totalAssignments = userIds.length * moduleIds.length;
   const completedAssignments = userProgress.filter((p) => p.status === 'completed').length;
   const completionRate = totalAssignments > 0 ? Math.round((completedAssignments / totalAssignments) * 100) : 0;
 
-  // 7. Calculate organization grade (average of all scores)
-  const scoredProgress = userProgress.filter((p) => p.score !== undefined && p.score !== null);
-  const avgScore = scoredProgress.length > 0
-    ? scoredProgress.reduce((sum, p) => sum + (p.score || 0), 0) / scoredProgress.length
-    : 0;
+  // 7. Organization grade: the average of each learner's average on finished modules,
+  // the same figure the company's own dashboard shows as "average score", out of 10.
+  const learnerAverageById = new Map<string, number>();
+  for (const u of users) {
+    const scores = userProgress
+      .filter((p) => p.userId.equals(u._id) && p.status === 'completed')
+      .map((p) => p.score)
+      .filter((score): score is number => score !== null);
+    if (scores.length > 0) {
+      learnerAverageById.set(u._id.toString(), Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length));
+    }
+  }
+  const averageOf = (values: number[]) =>
+    values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const avgScore = averageOf([...learnerAverageById.values()]);
   const organizationGrade = Math.round(avgScore) / 10; // scores are 0-100, the grade is 0-10
 
   // Average score and completion per module, from real progress
@@ -336,13 +352,12 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
     .map((u) => {
       const own = userProgress.filter((p) => p.userId.equals(u._id));
       const completedOwn = own.filter((p) => p.status === 'completed');
+      const scores = completedOwn.map((p) => p.score).filter((score): score is number => score !== null);
       const averageScore =
-        completedOwn.length > 0
-          ? Math.round(completedOwn.reduce((sum, p) => sum + (p.score || 0), 0) / completedOwn.length)
-          : 0;
+        scores.length > 0 ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length) : 0;
       return {
         userId: u._id.toString(),
-        name: u.fullName || [u.firstName, u.lastName].filter(Boolean).join(' '),
+        name: learnerName(u),
         teamName: (u.teamId && teamMap.get(u.teamId.toString())) || 'No team',
         completedModules: completedOwn.length,
         averageScore,
@@ -362,17 +377,19 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
       const teamTotal = teamUserIds.length * moduleIds.length;
       const teamProgressPct = teamTotal > 0 ? Math.round((teamCompleted / teamTotal) * 100) : 0;
 
-      const teamScored = teamProgress.filter((p) => p.score !== undefined && p.score !== null);
-      const teamAvgScore = teamScored.length > 0
-        ? teamScored.reduce((sum, p) => sum + (p.score || 0), 0) / teamScored.length
-        : 0;
+      // Same definition as the grade: the team's learners' averages on finished modules.
+      const teamAvgScore = averageOf(
+        teamUserIds
+          .map((id) => learnerAverageById.get(id.toString()))
+          .filter((avg): avg is number => avg !== undefined),
+      );
 
       return {
         teamId: team._id.toString(),
         teamName: team.name,
         activeCount: teamUserIds.length,
         progressPercentage: teamProgressPct,
-        averageScore: Math.round(teamAvgScore * 10) / 10,
+        averageScore: Math.round(teamAvgScore),
       };
     })
   );
@@ -390,7 +407,8 @@ const getCompanyDetailsFromDB = async (companyId: string): Promise<CompanyDetail
         moduleId: module._id.toString(),
         moduleName: module.title,
         teamId: (module as any).teamId?.toString() || null,
-        teamName: assignedTeam?.name || 'Unassigned',
+        // Modules without a team are for the whole company, not unassigned.
+        teamName: assignedTeam?.name || 'Whole company',
         completionPercentage: completionPct,
         completedCount: completed,
         totalAssigned: total,

@@ -8,6 +8,7 @@ const answerSchema = new Schema(
     isCorrect: { type: Boolean },
     score: { type: Number },
     answeredAt: { type: Date, default: Date.now },
+    firstIsCorrect: { type: Boolean },
     timeSpentSeconds: { type: Number, min: 0 },
     watchedPercent: { type: Number, min: 0, max: 100 },
   },
@@ -17,6 +18,7 @@ const answerSchema = new Schema(
 const attemptSchema = new Schema(
   {
     score: { type: Number },
+    gradedScore: { type: Number },
     correctAnswers: { type: Number, default: 0 },
     scoredAnswers: { type: Number, default: 0 },
     startedAt: { type: Date },

@@ -5,6 +5,7 @@ import { UserProgress } from './userProgress.model';
 import { Module } from '../Module/module.model';
 import { User } from '../User/user.model';
 import { Team } from '../Team/team.model';
+import { gradedScore, isGradable } from '../../utils/gradedScore';
 
 // ── Get My Learning Path (User Dashboard & Assigned Modules) ──
 const getMyLearningPathFromDB = async (
@@ -44,11 +45,10 @@ const getMyLearningPathFromDB = async (
     };
   }
 
-  // Determine status filter: default to both published & draft so assigned modules always show
+  // Drafts can't be opened by learners, so they aren't part of the learning path
+  // unless asked for explicitly.
   const statusFilter =
-    queryStatus === 'published'
-      ? 'published'
-      : { $in: ['published', 'draft'] };
+    queryStatus === 'all' ? { $in: ['published', 'draft'] } : 'published';
 
   // Find modules assigned to user's team or company
   const filterQuery: any = { status: statusFilter, isDeleted: false };
@@ -377,16 +377,15 @@ const submitAnswerInDB = async (
       finishedAt &&
       !(progress.attempts || []).some((a: any) => a.completedAt?.getTime() === finishedAt)
     ) {
-      const scored = (progress.answers || []).filter((a: any) => {
-        const q: any = module.questions.find((qItem: any) => qItem.id === a.questionId);
-        return q ? q.isScored !== false : true;
-      });
+      const gradableIds = new Set(module.questions.filter(isGradable).map((q: any) => q.id));
+      const graded = (progress.answers || []).filter((a: any) => gradableIds.has(a.questionId));
       progress.attempts = [
         ...(progress.attempts || []),
         {
           score: progress.score,
-          correctAnswers: scored.filter((a: any) => a.isCorrect).length,
-          scoredAnswers: scored.length,
+          gradedScore: gradedScore(progress.answers, module.questions),
+          correctAnswers: graded.filter((a: any) => a.isCorrect).length,
+          scoredAnswers: graded.length,
           startedAt: progress.startedAt,
           completedAt: progress.completedAt,
         },
@@ -395,10 +394,13 @@ const submitAnswerInDB = async (
 
     // Update or push answer
     const existingAnswerIndex = progress.answers.findIndex((a: any) => a.questionId === questionId);
+    const existingAnswer: any = existingAnswerIndex > -1 ? progress.answers[existingAnswerIndex] : null;
     const answerObj = {
       questionId,
       answer,
       isCorrect,
+      // Kept from the very first answer, so retakes don't make a question look easier.
+      firstIsCorrect: existingAnswer ? (existingAnswer.firstIsCorrect ?? existingAnswer.isCorrect) : isCorrect,
       score: qScore,
       answeredAt: new Date(),
       ...(timeSpentSeconds !== undefined ? { timeSpentSeconds: Math.round(timeSpentSeconds) } : {}),
