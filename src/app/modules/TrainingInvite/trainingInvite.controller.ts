@@ -70,8 +70,10 @@ const getInvitations = catchAsync(async (req, res) => {
 
 // ── Resend Invite ──
 const resendInvite = catchAsync(async (req, res) => {
+  const companyId = req.user.role === 'company' ? req.user.userId : undefined;
   const result = await TrainingInviteServices.resendTrainingInviteByEmail(
     req.params.inviteId as string,
+    companyId,
   );
 
   sendResponse(res, {

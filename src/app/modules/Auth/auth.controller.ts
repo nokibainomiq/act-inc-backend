@@ -31,17 +31,14 @@ const guestLogin = catchAsync(async (req, res) => {
 
 // ── Flow 6: QR Code Login/Registration ──
 const qrCodeLogin = catchAsync(async (req, res) => {
-  const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip || req.socket.remoteAddress;
-  const userAgent = req.headers['user-agent'];
-
+  // A device is recognised by its guest ID. Matching on IP and browser was dropped:
+  // colleagues on one network with the same phone ended up in the same account.
   const payload = {
     ...req.body,
     authToken: req.headers.authorization ? req.headers.authorization.split(' ')[1] : undefined,
     guestIdHeader: (req.headers['guest-id'] || req.headers['x-guest-id']) as string | undefined,
     cookieGuestId: req.cookies?.guestId,
     cookieRefreshToken: req.cookies?.refreshToken,
-    clientIp,
-    userAgent,
   };
 
   const result = await AuthServices.qrCodeLogin(payload);

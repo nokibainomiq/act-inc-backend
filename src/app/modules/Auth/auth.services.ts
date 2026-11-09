@@ -1,6 +1,5 @@
 import httpStatus from 'http-status';
 import bcrypt from 'bcrypt';
-import crypto from 'node:crypto';
 import { Types } from 'mongoose';
 import AppError from '../../errors/AppError';
 import { User } from '../User/user.model';
@@ -279,8 +278,6 @@ const qrCodeLogin = async (payload: {
   guestIdHeader?: string;
   cookieGuestId?: string;
   cookieRefreshToken?: string;
-  clientIp?: string;
-  userAgent?: string;
 }) => {
   const {
     qrToken,
@@ -290,8 +287,6 @@ const qrCodeLogin = async (payload: {
     guestIdHeader,
     cookieGuestId,
     cookieRefreshToken,
-    clientIp,
-    userAgent,
   } = payload;
 
   // Decode and verify QR token
@@ -357,52 +352,6 @@ const qrCodeLogin = async (payload: {
   // 3. Check via userId (body)
   if (!existingUser && clientUserId) {
     existingUser = await User.findById(clientUserId);
-  }
-
-  // 4. Device Fingerprint fallback (IP + User-Agent + Company + Team)
-  if (!existingUser && clientIp && userAgent) {
-    const rawFingerprint = `${clientIp}_${userAgent}_${companyId}_${teamId}`;
-    const deviceFingerprint = crypto.createHash('md5').update(rawFingerprint).digest('hex');
-    const fpGuestId = `qr_fp_${deviceFingerprint.slice(0, 16)}`;
-
-    existingUser = await User.findOne({ guestId: fpGuestId, isDeleted: false });
-    if (!existingUser) {
-      // Create user with this deterministic fingerprint guestId so future scans from same device log in
-      const autoName = `User_${deviceFingerprint.slice(-6)}`;
-      const autoEmail = `${fpGuestId}@qr.local`;
-
-      existingUser = await User.create({
-        firstName: autoName,
-        lastName: deviceFingerprint.slice(-6),
-        fullName: autoName,
-        email: autoEmail,
-        guestId: fpGuestId,
-        role: 'user',
-        authType: 'qr',
-        companyId: new Types.ObjectId(companyId),
-        teamId: new Types.ObjectId(teamId),
-        status: 'active',
-        isOtpVerified: true,
-        lastActiveAt: new Date(),
-      });
-
-      console.log(`✅ Auto-registered new QR user via Device Fingerprint: ${autoName}`);
-
-      const jwtPayload = {
-        userId: existingUser._id.toString(),
-        role: 'user',
-        companyId,
-        teamId,
-        authType: 'qr' as const,
-      };
-
-      return {
-        accessToken: createToken(jwtPayload, config.jwt_access_secret!, config.jwt_access_expires_in!),
-        refreshToken: createToken(jwtPayload, config.jwt_refresh_secret!, config.jwt_refresh_expires_in!),
-        user: existingUser,
-        isNewUser: true,
-      };
-    }
   }
 
   // ── Existing User Found -> Perform Login ──

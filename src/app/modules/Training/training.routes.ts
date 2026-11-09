@@ -1,6 +1,7 @@
 import express from 'express';
 import validateRequest from '../../middleware/validateRequest';
 import auth from '../../middleware/auth';
+import ownCompany from '../../middleware/ownCompany';
 import { upload } from '../../middleware/multer';
 import { TrainingControllers } from './training.controller';
 import { TrainingValidation } from './training.validation';
@@ -130,6 +131,7 @@ router.patch(
 router.get(
   '/company/:companyId',
   auth(USER_ROLE.admin, USER_ROLE.superAdmin, USER_ROLE.company),
+  ownCompany('companyId'),
   TrainingControllers.getTrainingsByCompany,
 );
 

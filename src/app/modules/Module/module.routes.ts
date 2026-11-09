@@ -1,6 +1,7 @@
 import express from 'express';
 import validateRequest from '../../middleware/validateRequest';
 import auth from '../../middleware/auth';
+import ownCompany from '../../middleware/ownCompany';
 import { upload } from '../../middleware/multer';
 import { ModuleControllers } from './module.controller';
 import { ModuleValidation } from './module.validation';
@@ -86,6 +87,7 @@ router.get(
 router.get(
   '/company/:companyId',
   auth(USER_ROLE.admin, USER_ROLE.superAdmin, USER_ROLE.company),
+  ownCompany('companyId'),
   ModuleControllers.getModulesByCompany,
 );
 

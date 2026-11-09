@@ -21,6 +21,22 @@ export interface IUserProgress {
     isCorrect?: boolean;
     score?: number;
     answeredAt: Date;
+    // Whether the learner's first answer to this question was right; retakes don't change it.
+    firstIsCorrect?: boolean;
+    // Seconds the learner spent on the question, as reported by the app.
+    timeSpentSeconds?: number;
+    // How much of a video question's video was watched, 0-100.
+    watchedPercent?: number;
+  }[];
+  // Earlier finished runs of this module, kept when a learner starts it again.
+  attempts?: {
+    score?: number | null;
+    // Score over the questions that have a right answer.
+    gradedScore?: number | null;
+    correctAnswers: number;
+    scoredAnswers: number;
+    startedAt?: Date;
+    completedAt?: Date;
   }[];
 }
 

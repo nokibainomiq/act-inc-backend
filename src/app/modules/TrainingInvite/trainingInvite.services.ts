@@ -213,9 +213,10 @@ const getInvitationsByTrainingFromDB = async (trainingId: string, companyId?: st
 };
 
 // ── Resend Invite by Email ──
-const resendTrainingInviteByEmail = async (inviteId: string) => {
+const resendTrainingInviteByEmail = async (inviteId: string, companyId?: string) => {
   const invite = await TrainingInvite.findById(inviteId).populate('trainingId');
-  if (!invite) {
+  // A company can only resend its own invitations, so others look the same as missing ones.
+  if (!invite || (companyId && String(invite.companyId) !== companyId)) {
     throw new AppError(httpStatus.NOT_FOUND, 'Invitation not found');
   }
   if (!invite.email) {

@@ -760,11 +760,23 @@ const getMyTrainingsFromDB = async (userId: string) => {
         );
       }, 0);
 
+      // The learner's own progress, so the home screen can show "2 of 4 modules finished".
+      const completedModules =
+        publishedIdSet.size > 0
+          ? await UserProgress.countDocuments({
+              userId: user._id,
+              moduleId: { $in: [...publishedIdSet] },
+              status: 'completed',
+            })
+          : 0;
+
       const trainingObj = training.toObject();
       return {
         ...trainingObj,
         topicCount: topics.length,
         totalModules,
+        completedModules,
+        progressPercentage: totalModules > 0 ? Math.round((completedModules / totalModules) * 100) : 0,
       };
     }),
   );
